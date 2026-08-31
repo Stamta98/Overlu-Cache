@@ -1,5 +1,11 @@
 # Cambios
 
+## 0.2.1
+
+- Las hojas originales se dejaban de encolar pero se imprimían igual: la página
+  cargaba el paquete **y** las 23 hojas. `wp_print_styles()` imprime `to_do`, no
+  la cola, y resolver el orden es lo que rellena `to_do` (trampa 3.19).
+
 ## 0.2.0 — Módulo de CSS
 
 - Nuevo módulo **CSS**, apagado por defecto: minifica y combina las hojas

@@ -191,6 +191,11 @@ final class Css extends Module {
 		$combine = (bool) $this->setting( 'combine', true );
 		$minify  = (bool) $this->setting( 'minify', true );
 
+		// Anything already resolved into to_do would be printed even after
+		// being dequeued. Emptying it forces WordPress to read the queue again,
+		// which is where the dequeues actually happen.
+		$styles->to_do = [];
+
 		foreach ( $groups as $media => $items ) {
 			$this->replace_group( $styles, $bundle, (string) $media, $items, $combine, $minify );
 		}

@@ -259,6 +259,24 @@ deja de encontrar lo que edita.
 `?bricks=` o `?brickspreview=` en la URL, ni cuando `bricks_is_builder()` dice
 que sí.
 
+### 3.19 Desencolar una hoja no basta
+
+`wp_print_styles()` no imprime la cola: imprime `$wp_styles->to_do`, que
+`all_deps()` rellena y **nunca vacía**. Preguntar por el orden de la cola es
+justo lo que rellena `to_do`, así que después de eso `dequeue()` quita la hoja
+de la cola y WordPress la imprime igualmente.
+
+> Pasó en producción, con el módulo recién encendido: el paquete se generó
+> bien, se encoló bien, y la página pasó a cargar **24 hojas y 1,1 MB** en vez
+> de una. El sitio se veía perfecto, que es lo que hace que este fallo dure
+> semanas si nadie mira las peticiones.
+
+**Regla:** el recolector resuelve el orden sobre una **copia** de `WP_Styles` y
+no toca el registro real; el módulo vacía `to_do` antes de encolar, para que
+WordPress vuelva a leer la cola ya modificada. Después de cualquier cambio en
+este módulo, contar las hojas de la página es la comprobación obligatoria: que
+se vea bien no demuestra nada.
+
 ---
 
 ## 4. Desplegar sin sustos
@@ -268,12 +286,14 @@ que sí.
 2. Instalar con la caché de página **apagada**. Es el estado por defecto.
 3. Chequeo de estado: `/`, `/wp-json/`, `/shop/`, `/cart/`, `/my-account/` y una
    ficha de producto.
-4. Encender la caché y repetir el chequeo mirando las cabeceras:
+4. Con el módulo de CSS, **contar las hojas de estilo** de la portada, una
+   categoría y una ficha: tiene que bajar de 23 a 1, no subir a 24.
+5. Encender la caché y repetir el chequeo mirando las cabeceras:
    `curl -sI https://overlu.com/ | grep -i x-bricks-cache`.
    La primera visita es `MISS`, la segunda `HIT`. `/cart/` tiene que ser
    `BYPASS` siempre.
-5. Añadir un producto al carrito y recargar la portada: debe dejar de haber
+6. Añadir un producto al carrito y recargar la portada: debe dejar de haber
    `HIT` para esa sesión.
-6. Si algo falla, desactivar el plugin. Al desactivarse se retira el archivo, la
+7. Si algo falla, desactivar el plugin. Al desactivarse se retira el archivo, la
    constante y todas las páginas guardadas, así que el sitio vuelve al estado
    anterior sin tocar nada más.

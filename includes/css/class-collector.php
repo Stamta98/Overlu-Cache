@@ -62,19 +62,27 @@ final class Collector {
 	public function collect( \WP_Styles $styles ): array {
 		$this->skipped = [];
 
-		$styles->all_deps( $styles->queue );
+		// all_deps() appends to $styles->to_do, and do_items() prints whatever
+		// is in to_do rather than re-reading the queue. Resolving the order on
+		// the real object would therefore pin every stylesheet in place: the
+		// later dequeue would remove it from the queue and it would be printed
+		// anyway, next to the bundle that contains it. So the order is resolved
+		// on a copy and the registry is left untouched.
+		$registry        = clone $styles;
+		$registry->to_do = [];
+		$registry->all_deps( $registry->queue );
 
 		$groups = [];
 		$seen   = [];
 
-		foreach ( $styles->to_do as $handle ) {
+		foreach ( $registry->to_do as $handle ) {
 			$item = $styles->registered[ $handle ] ?? null;
 
 			if ( ! $item instanceof \_WP_Dependency ) {
 				continue;
 			}
 
-			$inline = $this->inline_for( $styles, $handle );
+			$inline = $this->inline_for( $registry, $handle );
 
 			if ( ! $item->src ) {
 				// An alias handle: no file, but it may carry inline styles that
@@ -86,7 +94,7 @@ final class Collector {
 				continue;
 			}
 
-			$reason = $this->skip_reason( $styles, $item );
+			$reason = $this->skip_reason( $registry, $item );
 
 			if ( null !== $reason ) {
 				$this->skipped[ $handle ] = $reason;
@@ -94,7 +102,7 @@ final class Collector {
 				continue;
 			}
 
-			$src  = $this->resolve_src( $styles, $item );
+			$src  = $this->resolve_src( $registry, $item );
 			$path = Bundle::to_path( $src );
 
 			if ( null === $path ) {
