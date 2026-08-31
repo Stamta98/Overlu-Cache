@@ -1,5 +1,12 @@
 # Cambios
 
+## 0.2.2
+
+- Las hojas que Bricks encola mientras dibuja la página (cabecera, pie, popups,
+  slider) se imprimían al final aunque su CSS ya fuese dentro del paquete: 80 KB
+  repetidos por página. Ahora se suprime su etiqueta, la impriman cuando la
+  impriman (trampa 3.20).
+
 ## 0.2.1
 
 - Las hojas originales se dejaban de encolar pero se imprimían igual: la página

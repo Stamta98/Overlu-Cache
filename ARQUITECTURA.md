@@ -277,6 +277,22 @@ WordPress vuelva a leer la cola ya modificada. Después de cualquier cambio en
 este módulo, contar las hojas de la página es la comprobación obligatoria: que
 se vea bien no demuestra nada.
 
+### 3.20 Bricks encola hojas mientras dibuja la página
+
+Combinar la cola no basta. Bricks encola CSS **durante el render**: la
+plantilla de cabecera, la de pie, un popup, el slider de una ficha. Todo eso
+ocurre después de que la cabecera del documento ya se haya impreso, y WordPress
+imprime esas hojas al final del cuerpo.
+
+> Pasó: tras arreglar la trampa 3.19 la portada bajó de 24 hojas a 9, y esas 9
+> eran CSS que **ya iba dentro del paquete**. La página cargaba 80 KB repetidos.
+
+**Regla:** el módulo recuerda qué handles metió en un paquete y elimina su
+etiqueta con el filtro `style_loader_tag`, la impriman cuando la impriman.
+Desencolar antes no sirve de nada cuando el encolado ocurre después. Las hojas
+que aparecen **solo** tarde y no están en ningún paquete se imprimen
+normalmente: quitarlas dejaría la página sin esos estilos.
+
 ---
 
 ## 4. Desplegar sin sustos

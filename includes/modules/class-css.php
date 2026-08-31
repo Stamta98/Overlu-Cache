@@ -44,6 +44,13 @@ final class Css extends Module {
 	private array $own_handles = [];
 
 	/**
+	 * Handles whose content already travels inside a bundle.
+	 *
+	 * @var string[]
+	 */
+	private array $bundled_handles = [];
+
+	/**
 	 * Numbers for the status screen.
 	 *
 	 * @var array<string,int>
@@ -157,6 +164,7 @@ final class Css extends Module {
 	public function boot(): void {
 		add_action( 'wp_print_styles', [ $this, 'optimize' ], 1 );
 		add_action( 'wp_head', [ $this, 'print_critical' ], 1 );
+		add_filter( 'style_loader_tag', [ $this, 'suppress_bundled_tag' ], 9, 2 );
 		add_filter( 'style_loader_tag', [ $this, 'maybe_async_tag' ], 10, 2 );
 		add_action( 'bricks_cache_cleanup', [ $this, 'collect_garbage' ] );
 		add_filter( 'bricks_cache_diagnostics', [ $this, 'diagnostics' ] );
@@ -254,6 +262,10 @@ final class Css extends Module {
 				wp_add_inline_style( $handle, $inline );
 			}
 
+			foreach ( $files as $item ) {
+				$this->bundled_handles[] = (string) $item['handle'];
+			}
+
 			$this->own_handles[]         = $handle;
 			$this->report['combinadas'] += count( $files );
 			$this->report['bytes']      += (int) $built['bytes'];
@@ -283,6 +295,7 @@ final class Css extends Module {
 				wp_add_inline_style( $handle, (string) $item['inline'] );
 			}
 
+			$this->bundled_handles[]     = (string) $item['handle'];
 			$this->own_handles[]         = $handle;
 			$this->report['combinadas'] += 1;
 			$this->report['bytes']      += (int) $built['bytes'];
@@ -320,6 +333,22 @@ final class Css extends Module {
 			"<style id=\"bricks-cache-critico\">%s</style>\n",
 			wp_strip_all_tags( $critical ) // phpcs:ignore WordPress.Security.EscapeOutput
 		);
+	}
+
+	/**
+	 * Drop the tag of a stylesheet that is already inside a bundle.
+	 *
+	 * Bricks enqueues stylesheets while it renders — the header template, the
+	 * footer, a popup, a slider — long after the head has been printed, and
+	 * WordPress prints those at the end of the body. The handle was already
+	 * bundled, so what arrives late is a second copy of CSS the page has:
+	 * dequeuing it earlier cannot help, because the enqueue happens afterwards.
+	 *
+	 * @param string $tag    Link tag.
+	 * @param string $handle Style handle.
+	 */
+	public function suppress_bundled_tag( string $tag, string $handle ): string {
+		return in_array( $handle, $this->bundled_handles, true ) ? '' : $tag;
 	}
 
 	/**
