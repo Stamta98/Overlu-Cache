@@ -269,10 +269,14 @@ final class Settings {
 	/**
 	 * Persist a full or partial set of raw values after sanitising them.
 	 *
-	 * @param array<string,mixed> $raw Untrusted input, usually $_POST.
+	 * @param array<string,mixed> $raw       Untrusted input, usually $_POST.
+	 * @param bool                $from_form Whether $raw is a complete form
+	 *                                       submission of the sections it
+	 *                                       contains. Only then does a missing
+	 *                                       checkbox mean "off".
 	 */
-	public function update( array $raw ): bool {
-		$clean  = $this->sanitize( $raw );
+	public function update( array $raw, bool $from_form = false ): bool {
+		$clean  = $this->sanitize( $raw, $from_form );
 		$before = $this->all();
 		$after  = [];
 
@@ -298,6 +302,9 @@ final class Settings {
 	/**
 	 * Force one value without going through a form.
 	 *
+	 * Used by code, not by the form, so it never touches the fields it was not
+	 * given.
+	 *
 	 * @param string $path  Dotted path.
 	 * @param mixed  $value New value, already of the right type.
 	 */
@@ -315,11 +322,13 @@ final class Settings {
 	 * Cast and clean raw input against the schema. Anything not declared is
 	 * dropped, so a crafted request cannot inject its own keys.
 	 *
-	 * @param array<string,mixed> $raw Untrusted input.
+	 * @param array<string,mixed> $raw       Untrusted input.
+	 * @param bool                $from_form Whether an absent checkbox should
+	 *                                       be read as "off".
 	 *
 	 * @return array<string,array<string,mixed>>
 	 */
-	public function sanitize( array $raw ): array {
+	public function sanitize( array $raw, bool $from_form = false ): array {
 		$clean = [];
 
 		foreach ( self::schema() as $section => $definition ) {
@@ -329,8 +338,11 @@ final class Settings {
 
 			foreach ( $definition['fields'] as $field => $args ) {
 				if ( ! array_key_exists( $field, $raw[ $section ] ) ) {
-					// A missing checkbox means "off"; a missing text field means "leave it".
-					if ( 'toggle' === ( $args['type'] ?? '' ) ) {
+					// An unchecked checkbox is simply absent from the POST, so
+					// a form submission means "off". A partial update from code
+					// means nothing at all: reading it as "off" there would let
+					// switching one option quietly switch off its neighbours.
+					if ( $from_form && 'toggle' === ( $args['type'] ?? '' ) ) {
 						$clean[ $section ][ $field ] = false;
 					}
 

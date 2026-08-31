@@ -180,6 +180,37 @@ que pinte esa lista en el servidor enseñaría los productos de otro visitante**
 Si algún día se añade ese elemento a una plantilla cacheada, hay que sacar la
 cookie de la lista con el filtro.
 
+### 3.13 El tema carga después que los plugins
+
+`BRICKS_VERSION` no existe cuando el plugin arranca en `plugins_loaded`: Bricks
+es un tema y WordPress carga los temas después. Preguntar ahí si Bricks está
+activo siempre responde que no, y las purgas de diseño se quedan **sin
+registrar en silencio**. Nada falla, nada se escribe en el registro, y el sitio
+sigue sirviendo páginas que enlazan un CSS que Bricks ya ha regenerado.
+
+> Pasó. Se detectó comprobando `has_action( 'bricks/generate_css_file' )` en la
+> verificación, no usando el sitio.
+
+**Regla:** lo que dependa del tema se registra en `after_setup_theme`. Es la
+misma trampa que la 3.1 de Bricks Ecommerce, vista desde el otro lado: allí el
+problema es cargar demasiado pronto una clase del tema, aquí es preguntar
+demasiado pronto por él.
+
+### 3.14 Guardar un ajuste no puede apagar sus vecinos
+
+Una casilla desmarcada no se envía en un formulario, así que al guardar hay que
+leer su ausencia como «desactivada». Pero `Settings::set()` recibe **un solo
+campo** desde el código: aplicar ahí la misma regla apaga todas las demás
+casillas de esa sección.
+
+> Pasó al encender la caché desde el MCP: `set( 'page_cache.enabled', true )`
+> dejó apagadas la compresión y la firma del HTML. La caché funcionaba, y las
+> copias comprimidas no se escribían.
+
+**Regla:** `update()` solo interpreta las ausencias cuando el origen es un
+formulario completo (`$from_form`). Desde el código, lo que no se pasa no se
+toca.
+
 ---
 
 ## 4. Desplegar sin sustos

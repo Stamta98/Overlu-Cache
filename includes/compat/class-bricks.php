@@ -52,9 +52,22 @@ final class Bricks {
 	}
 
 	/**
-	 * Register the design-change hooks.
+	 * WordPress loads plugins before the theme, and Bricks is a theme. Asking
+	 * whether Bricks exists while the plugin boots always answers no, and the
+	 * design purges end up silently unregistered: nothing breaks, nothing is
+	 * logged, and the site simply keeps serving pages styled by a CSS file that
+	 * no longer exists.
+	 *
+	 * So the question is asked once the theme is in memory.
 	 */
 	public function boot(): void {
+		add_action( 'after_setup_theme', [ $this, 'register' ], 20 );
+	}
+
+	/**
+	 * Register the design-change hooks, with the theme already loaded.
+	 */
+	public function register(): void {
 		if ( ! self::is_active() ) {
 			return;
 		}

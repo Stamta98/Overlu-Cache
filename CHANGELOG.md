@@ -1,5 +1,14 @@
 # Cambios
 
+## 0.1.2
+
+- Cambiar un ajuste desde el código ya no apaga los demás interruptores de su
+  sección. Encender la caché dejaba apagadas la compresión y la firma del HTML
+  sin decir nada (trampa 3.14).
+- Las purgas de diseño de Bricks se registran en `after_setup_theme`: al
+  arrancar el plugin el tema todavía no existe, así que nunca llegaban a
+  conectarse (trampa 3.13).
+
 ## 0.1.1
 
 - Las fichas de producto vuelven a cachearse: la cookie

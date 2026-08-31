@@ -417,7 +417,7 @@ final class Admin {
 			? wp_unslash( $_POST['bricks_cache'] ) // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
 			: [];
 
-		$this->plugin->settings()->update( (array) $raw );
+		$this->plugin->settings()->update( (array) $raw, true );
 
 		$this->plugin->notice( __( 'Ajustes guardados y caché vaciada.', 'bricks-cache' ), 'success' );
 
