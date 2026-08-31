@@ -287,6 +287,16 @@ final class Admin {
 				echo '</select>';
 				break;
 
+			case 'code':
+				printf(
+					'<textarea id="%s" name="%s" rows="8" class="large-text code" spellcheck="false" placeholder="%s">%s</textarea>',
+					esc_attr( $id ),
+					esc_attr( $name ),
+					esc_attr__( 'Pega aquí el CSS que debe verse antes de que cargue el resto.', 'bricks-cache' ),
+					esc_textarea( (string) $value )
+				);
+				break;
+
 			case 'list':
 				printf(
 					'<textarea id="%s" name="%s" rows="6" class="large-text code">%s</textarea>',

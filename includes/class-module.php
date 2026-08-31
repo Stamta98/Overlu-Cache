@@ -44,6 +44,14 @@ abstract class Module implements Module_Interface {
 	}
 
 	/**
+	 * Declare this module's settings section. Called before anything reads the
+	 * settings, so a module can add its own fields and get them stored,
+	 * sanitised and rendered without touching the core.
+	 */
+	public function register_settings(): void {
+	}
+
+	/**
 	 * Reads "<module id>.enabled" from the settings.
 	 */
 	public function is_enabled(): bool {

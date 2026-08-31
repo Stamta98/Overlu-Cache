@@ -26,10 +26,12 @@ includes/
   class-logger.php        Registro con rotación.
   class-diagnostics.php   Comprobaciones del panel de estado.
   store/                  Backend intercambiable. Hoy solo disco.
-  modules/                Una optimización = un módulo.
+  css/                    Minificador, recolector de la cola, empaquetado y CSS crítico.
+  modules/                Una optimización = un módulo. Hoy: caché de página y CSS.
   compat/                 WooCommerce, Bricks, Bricks Ecommerce.
   admin/                  Panel y barra superior.
 tests/test-pure-rules.php Pruebas de Key y Bypass, sin WordPress.
+tests/test-css.php        Pruebas del minificador, sin WordPress.
 ```
 
 **Las dos mitades.** El *dropin* lee: corre antes que WordPress y sirve la
@@ -210,6 +212,52 @@ casillas de esa sección.
 **Regla:** `update()` solo interpreta las ausencias cuando el origen es un
 formulario completo (`$from_form`). Desde el código, lo que no se pasa no se
 toca.
+
+### 3.15 El CSS en línea desaparece con su hoja
+
+`wp_add_inline_style( 'mi-handle', $css )` guarda el CSS **colgado del handle**.
+Al desencolar esa hoja para meterla en el paquete, el CSS en línea se va con
+ella. Y ese CSS suele ser el que tiene los valores calculados de la página: el
+color de una sección, el alto de la cabecera.
+
+El resultado no es una página rota, es una página *casi* bien, que es la clase
+de fallo más difícil de ver.
+
+**Regla:** el recolector lee `get_data( $handle, 'after' )` de cada hoja antes
+de tocarla y vuelve a colgarlo del paquete, en el mismo orden. El CSS en línea
+**no** entra en el archivo combinado: cambia de una página a otra y haría que
+cada página generase su propio archivo.
+
+### 3.16 El HTML guardado apunta a un CSS que puede dejar de existir
+
+El nombre del paquete es la huella de lo que lleva dentro: cambia un archivo,
+cambia el nombre. Perfecto para el navegador, y una trampa con la caché de
+página encendida: las páginas guardadas ayer enlazan el paquete de ayer. Si al
+generar el nuevo se borra el viejo, esas páginas se sirven **sin estilos**.
+
+**Regla:** los paquetes antiguos se conservan (siete días por defecto) y solo
+los borra la limpieza programada. Es disco barato a cambio de no dejar a nadie
+mirando una página desnuda.
+
+### 3.17 Minificar con una expresión regular rompe `calc()`
+
+Es la forma clásica de tirar el diseño de un sitio: la expresión regular se come
+el espacio de `calc(100% - 20px)`, la llave dentro de `content: "}"`, el punto
+y coma de un `data:` URI y el `/*` que vive dentro de una cadena.
+
+**Regla:** `Minifier` es un escáner, no una expresión regular: recorre el
+archivo una vez sabiendo si está dentro de una cadena, de un comentario, de
+`url()` o de un paréntesis, y dentro de paréntesis no quita nada más que
+espacios repetidos. Cada uno de esos casos es una prueba en `tests/test-css.php`.
+
+### 3.18 El constructor de Bricks necesita ver sus hojas
+
+Si el paquete sustituye a las hojas originales dentro del constructor, Bricks
+deja de encontrar lo que edita.
+
+**Regla:** el módulo no hace nada en el escritorio, en el personalizador, con
+`?bricks=` o `?brickspreview=` en la URL, ni cuando `bricks_is_builder()` dice
+que sí.
 
 ---
 

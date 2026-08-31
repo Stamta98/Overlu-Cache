@@ -32,6 +32,14 @@ pagarse un pedido, al aprobarse una valoración, al tocar ajustes de
 WooCommerce y cuando Bricks regenera su CSS. Las purgas de una misma petición
 se agrupan y se ejecutan una sola vez.
 
+**Optimización de CSS.** Las hojas locales se minifican y se combinan en un
+único archivo por tipo de medio, respetando el orden que WordPress ya había
+resuelto y arrastrando consigo el CSS en línea de cada hoja. Se dejan fuera las
+externas, las condicionales y las que usan `@import`. El nombre del archivo es
+la huella de su contenido, así que se cachea para siempre en el navegador y se
+renueva solo. Opcionalmente se carga sin bloquear el dibujado, pero solo en las
+páginas para las que hayas escrito CSS crítico.
+
 **Panel en español** con estado, comprobaciones de salud, ajustes, registro y
 herramientas manuales; y accesos directos en la barra superior para vaciar todo
 o solo la página que se está viendo.
@@ -40,8 +48,10 @@ o solo la página que se está viendo.
 
 Está previsto, en este orden:
 
-1. CSS: minificar, combinar y generar CSS crítico por plantilla de Bricks.
-2. Eliminar el CSS que una página no usa (Bricks carga bastante de más).
+1. Eliminar el CSS que una página no usa. Aquí está la ganancia grande que
+   queda: 121 KB de esta tienda son tres fuentes de iconos completas
+   (Font Awesome, Ionicons, Themify) para usar un puñado de iconos.
+2. Generar el CSS crítico solo, en vez de pegarlo a mano.
 3. Scripts: diferir, retrasar hasta la primera interacción, excluir lo crítico.
 4. Imágenes: `loading`, `fetchpriority`, dimensiones, WebP/AVIF.
 5. Precarga: recorrer el sitemap y calentar la caché tras una purga.
@@ -88,6 +98,7 @@ WordPress, así que se pueden probar sin levantar nada:
 
 ```
 php tests/test-pure-rules.php
+php tests/test-css.php
 ```
 
 ## Estructura
@@ -108,7 +119,8 @@ includes/
   class-logger.php        Registro con rotación.
   class-diagnostics.php   Comprobaciones del panel de estado.
   store/                  Almacenamiento intercambiable (hoy: disco).
-  modules/                Una optimización por módulo (hoy: caché de página).
+  css/                    Minificador, recolector de la cola, empaquetado, CSS crítico.
+  modules/                Una optimización por módulo (caché de página y CSS).
   compat/                 WooCommerce, Bricks, Bricks Ecommerce.
   admin/                  Panel y barra superior.
 tests/                    Pruebas de las reglas puras.

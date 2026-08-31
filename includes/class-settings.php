@@ -201,6 +201,14 @@ final class Settings {
 	}
 
 	/**
+	 * Forget the cached schema, so a section registered after the first read
+	 * still shows up.
+	 */
+	public static function reset_schema_cache(): void {
+		self::$schema = null;
+	}
+
+	/**
 	 * Default value of every declared field, keyed section => field.
 	 *
 	 * @return array<string,array<string,mixed>>
@@ -379,6 +387,11 @@ final class Settings {
 				$options = array_keys( $args['options'] ?? [] );
 
 				return in_array( (string) $value, $options, true ) ? (string) $value : (string) ( $args['default'] ?? '' );
+
+			case 'code':
+				// CSS, kept as written: newlines and braces matter. Tags are
+				// stripped so a pasted </style> cannot escape the block.
+				return trim( wp_strip_all_tags( (string) $value ) );
 
 			case 'list':
 				$lines = is_array( $value ) ? $value : preg_split( '/\R/', (string) $value );

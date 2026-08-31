@@ -1,5 +1,25 @@
 # Cambios
 
+## 0.2.0 — Módulo de CSS
+
+- Nuevo módulo **CSS**, apagado por defecto: minifica y combina las hojas
+  locales en un archivo por tipo de medio, respetando el orden de dependencias
+  que WordPress ya había resuelto.
+- El CSS en línea de cada hoja (`wp_add_inline_style`) se conserva y se vuelve a
+  imprimir en su sitio, en vez de desaparecer con la hoja (trampa 3.15).
+- Se detectan y se eliminan las hojas duplicadas: el mismo archivo encolado dos
+  veces con handles distintos deja de pedirse dos veces.
+- Minificador propio escrito como escáner, no como expresión regular: respeta
+  `calc()`, las cadenas, los `data:` URI y los comentarios de licencia. 26
+  pruebas en `tests/test-css.php`, sin WordPress (trampa 3.17).
+- Las rutas relativas de `url()` se reescriben a absolutas al combinar.
+- Carga sin bloquear el dibujado, solo en las páginas con CSS crítico escrito.
+- CSS crítico por tipo de página: portada, catálogo, ficha, contenido y resto.
+- Los archivos generados se conservan siete días para no dejar sin estilos a las
+  páginas ya guardadas en caché (trampa 3.16).
+- El módulo declara su propia sección de ajustes: el panel le crea la pestaña y
+  el formulario sin tocar el núcleo, que era el objetivo del diseño.
+
 ## 0.1.2
 
 - Cambiar un ajuste desde el código ya no apaga los demás interruptores de su

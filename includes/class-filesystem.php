@@ -34,7 +34,7 @@ final class Filesystem {
 	/**
 	 * Absolute path of one of the plugin directories.
 	 *
-	 * @param string $sub One of: page, config, logs, assets.
+	 * @param string $sub One of: page, css, config, logs.
 	 */
 	public static function dir( string $sub = '' ): string {
 		$path = self::root() . ( '' === $sub ? '' : '/' . trim( $sub, '/' ) );
@@ -49,7 +49,7 @@ final class Filesystem {
 	public static function prepare(): bool {
 		$ok = true;
 
-		foreach ( [ '', 'page', 'config', 'logs' ] as $sub ) {
+		foreach ( [ '', 'page', 'css', 'config', 'logs' ] as $sub ) {
 			$ok = self::ensure_dir( self::dir( $sub ) ) && $ok;
 		}
 

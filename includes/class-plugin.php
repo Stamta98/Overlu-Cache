@@ -104,14 +104,16 @@ final class Plugin {
 
 		load_plugin_textdomain( 'bricks-cache', false, dirname( BRICKS_CACHE_BASENAME ) . '/languages' );
 
-		// Compatibility first: it declares exclusions the rest depends on.
+		// Modules first: they declare their own settings sections, and anything
+		// that reads a setting freezes the schema as it finds it.
+		$this->register_modules();
+
+		// Then compatibility: it declares the exclusions the rest depends on.
 		( new Compat\WooCommerce( $this ) )->boot();
 		( new Compat\Bricks( $this ) )->boot();
 		( new Compat\Bricks_Ecommerce( $this ) )->boot();
 
 		$this->purge->boot();
-
-		$this->register_modules();
 
 		foreach ( $this->modules as $module ) {
 			if ( $module->is_enabled() ) {
@@ -152,6 +154,7 @@ final class Plugin {
 	private function register_modules(): void {
 		$modules = [
 			new Modules\Page_Cache( $this ),
+			new Modules\Css( $this ),
 		];
 
 		/**
@@ -163,10 +166,18 @@ final class Plugin {
 		$modules = (array) apply_filters( 'bricks_cache_modules', $modules, $this );
 
 		foreach ( $modules as $module ) {
-			if ( $module instanceof Module_Interface ) {
-				$this->modules[ $module->id() ] = $module;
+			if ( ! $module instanceof Module_Interface ) {
+				continue;
+			}
+
+			$this->modules[ $module->id() ] = $module;
+
+			if ( $module instanceof Module ) {
+				$module->register_settings();
 			}
 		}
+
+		Settings::reset_schema_cache();
 	}
 
 	/**
