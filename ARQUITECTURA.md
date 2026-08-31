@@ -293,6 +293,21 @@ Desencolar antes no sirve de nada cuando el encolado ocurre después. Las hojas
 que aparecen **solo** tarde y no están en ningún paquete se imprimen
 normalmente: quitarlas dejaría la página sin esos estilos.
 
+### 3.21 Un solo paquete por página se descarga entero en cada página
+
+Combinarlo todo en un archivo es lo obvio y es lo equivocado. Bricks escribe un
+CSS por página, así que la portada, el catálogo y la ficha generan tres archivos
+de medio mega **casi idénticos**: al pasar de una a otra el navegador se
+descarga otra vez todo lo que ya tenía. Antes de combinar, esas quince hojas
+compartidas viajaban una sola vez para todo el sitio.
+
+**Regla:** las hojas se parten en **tramos consecutivos** por tipo —las que
+comparten todas las páginas y las que Bricks escribe para esta— y cada tramo es
+un paquete. Los tramos compartidos tienen la misma huella en todas las páginas,
+así que se descargan una vez para todo el sitio, y partir por tramos en vez de
+por tipo mantiene intacto el orden de la cascada: la regla que ganaba, sigue
+ganando.
+
 ---
 
 ## 4. Desplegar sin sustos

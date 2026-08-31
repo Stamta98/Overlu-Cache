@@ -1,5 +1,14 @@
 # Cambios
 
+## 0.2.3
+
+- El CSS se reparte en tramos: lo que comparten todas las páginas por un lado y
+  lo que Bricks escribe para cada página por otro. Antes, cada tipo de página
+  generaba su propio paquete de medio mega casi idéntico y el navegador lo
+  descargaba entero al cambiar de página (trampa 3.21).
+- Las hojas duplicadas se suprimen también cuando llegan con otro identificador
+  pero el mismo archivo.
+
 ## 0.2.2
 
 - Las hojas que Bricks encola mientras dibuja la página (cabecera, pie, popups,

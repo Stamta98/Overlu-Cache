@@ -51,6 +51,15 @@ final class Css extends Module {
 	private array $bundled_handles = [];
 
 	/**
+	 * Files already inside a bundle. The same file is queued under two handles
+	 * more often than anyone would guess, and the second handle deserves the
+	 * same treatment as the first.
+	 *
+	 * @var string[]
+	 */
+	private array $bundled_paths = [];
+
+	/**
 	 * Numbers for the status screen.
 	 *
 	 * @var array<string,int>
@@ -240,35 +249,45 @@ final class Css extends Module {
 		}
 
 		if ( $combine ) {
-			$built = $bundle->build( $files, $minify );
+			$runs  = $this->split_into_runs( $items );
+			$index = 0;
 
-			if ( null === $built ) {
-				return;
-			}
+			foreach ( $runs as $run ) {
+				$run_files = array_values( array_filter( $run['items'], static fn( $item ) => ! empty( $item['path'] ) ) );
 
-			$handle = self::HANDLE . '-' . sanitize_key( $media );
-
-			foreach ( $items as $item ) {
-				if ( ! empty( $item['path'] ) ) {
-					$styles->dequeue( $item['handle'] );
+				if ( [] === $run_files ) {
+					continue;
 				}
+
+				$built = $bundle->build( $run_files, $minify );
+
+				if ( null === $built ) {
+					continue;
+				}
+
+				++$index;
+
+				$handle = self::HANDLE . '-' . sanitize_key( $media ) . '-' . $index;
+
+				foreach ( $run_files as $item ) {
+					$styles->dequeue( (string) $item['handle'] );
+
+					$this->bundled_handles[] = (string) $item['handle'];
+					$this->bundled_paths[]   = (string) $item['path'];
+				}
+
+				wp_enqueue_style( $handle, $built['url'], [], null, $media ); // phpcs:ignore WordPress.WP.EnqueuedResourceParameters
+
+				$inline = $this->inline_of( $run['items'] );
+
+				if ( '' !== $inline ) {
+					wp_add_inline_style( $handle, $inline );
+				}
+
+				$this->own_handles[]         = $handle;
+				$this->report['combinadas'] += count( $run_files );
+				$this->report['bytes']      += (int) $built['bytes'];
 			}
-
-			wp_enqueue_style( $handle, $built['url'], [], null, $media ); // phpcs:ignore WordPress.WP.EnqueuedResourceParameters
-
-			$inline = $this->inline_of( $items );
-
-			if ( '' !== $inline ) {
-				wp_add_inline_style( $handle, $inline );
-			}
-
-			foreach ( $files as $item ) {
-				$this->bundled_handles[] = (string) $item['handle'];
-			}
-
-			$this->own_handles[]         = $handle;
-			$this->report['combinadas'] += count( $files );
-			$this->report['bytes']      += (int) $built['bytes'];
 
 			return;
 		}
@@ -296,10 +315,82 @@ final class Css extends Module {
 			}
 
 			$this->bundled_handles[]     = (string) $item['handle'];
+			$this->bundled_paths[]       = (string) $item['path'];
 			$this->own_handles[]         = $handle;
 			$this->report['combinadas'] += 1;
 			$this->report['bytes']      += (int) $built['bytes'];
 		}
+	}
+
+	/**
+	 * Split an ordered list of stylesheets into consecutive runs of the same
+	 * kind: the ones every page shares, and the ones Bricks writes for this
+	 * particular page.
+	 *
+	 * A single bundle per page would be the obvious thing to build and the
+	 * wrong one: every page type would get its own half-megabyte file with
+	 * nearly the same content, so moving from the home page to a product page
+	 * would download all of it again. Splitting by kind gives the shared runs
+	 * the same fingerprint on every page, so the browser downloads them once
+	 * for the whole site.
+	 *
+	 * Splitting by *runs* rather than by kind is what keeps the cascade intact:
+	 * the order inside a media group never changes, so a rule that used to win
+	 * still wins.
+	 *
+	 * @param array<int,array<string,mixed>> $items Collected stylesheets.
+	 *
+	 * @return array<int,array{page:bool,items:array<int,array<string,mixed>>}>
+	 */
+	private function split_into_runs( array $items ): array {
+		$runs    = [];
+		$current = null;
+
+		foreach ( $items as $item ) {
+			$is_page = $this->is_page_specific( $item );
+
+			if ( null === $current || $current['page'] !== $is_page ) {
+				if ( null !== $current ) {
+					$runs[] = $current;
+				}
+
+				$current = [
+					'page'  => $is_page,
+					'items' => [],
+				];
+			}
+
+			$current['items'][] = $item;
+		}
+
+		if ( null !== $current ) {
+			$runs[] = $current;
+		}
+
+		return $runs;
+	}
+
+	/**
+	 * Whether a stylesheet belongs to one page only. Bricks writes one CSS file
+	 * per post, template and popup, and those are the ones that change from
+	 * page to page.
+	 *
+	 * @param array<string,mixed> $item Collected stylesheet.
+	 */
+	private function is_page_specific( array $item ): bool {
+		$handle = (string) $item['handle'];
+		$path   = (string) $item['path'];
+
+		$page_specific = str_starts_with( $handle, 'bricks-post-' )
+			|| (bool) preg_match( '#/bricks/css/post-\d+#', $path );
+
+		/**
+		 * Filter whether a stylesheet is specific to one page.
+		 *
+		 * @param bool                $page_specific Guess so far.
+		 * @param array<string,mixed> $item          Collected stylesheet.
+		 */
+		return (bool) apply_filters( 'bricks_cache_css_is_page_specific', $page_specific, $item );
 	}
 
 	/**
@@ -348,7 +439,17 @@ final class Css extends Module {
 	 * @param string $handle Style handle.
 	 */
 	public function suppress_bundled_tag( string $tag, string $handle ): string {
-		return in_array( $handle, $this->bundled_handles, true ) ? '' : $tag;
+		if ( in_array( $handle, $this->bundled_handles, true ) ) {
+			return '';
+		}
+
+		if ( ! preg_match( '/href=[\'"]([^\'"]+)[\'"]/', $tag, $match ) ) {
+			return $tag;
+		}
+
+		$path = Bundle::to_path( $match[1] );
+
+		return null !== $path && in_array( $path, $this->bundled_paths, true ) ? '' : $tag;
 	}
 
 	/**
