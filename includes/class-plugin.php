@@ -1,0 +1,350 @@
+<?php
+/**
+ * Container and boot order.
+ *
+ * @package BricksCache
+ */
+
+namespace BricksCache;
+
+use BricksCache\Store\Factory;
+use BricksCache\Store\Store_Interface;
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+/**
+ * Builds the services once, in a fixed order, and hands them to whoever asks.
+ * Modules and compatibility layers never construct each other: they ask the
+ * container, which is what keeps a new optimisation from having to know how
+ * the page cache is wired.
+ */
+final class Plugin {
+
+	/**
+	 * Singleton.
+	 */
+	private static ?Plugin $instance = null;
+
+	/**
+	 * Settings service.
+	 */
+	private Settings $settings;
+
+	/**
+	 * Logger service.
+	 */
+	private Logger $logger;
+
+	/**
+	 * Config file writer.
+	 */
+	private Config $config;
+
+	/**
+	 * Active backend.
+	 */
+	private Store_Interface $store;
+
+	/**
+	 * Eligibility rules.
+	 */
+	private Rules $rules;
+
+	/**
+	 * Invalidation.
+	 */
+	private Purge $purge;
+
+	/**
+	 * Registered modules, keyed by id.
+	 *
+	 * @var array<string,Module_Interface>
+	 */
+	private array $modules = [];
+
+	/**
+	 * Whether boot() already ran.
+	 */
+	private bool $booted = false;
+
+	/**
+	 * Container accessor.
+	 */
+	public static function instance(): Plugin {
+		if ( null === self::$instance ) {
+			self::$instance = new self();
+		}
+
+		return self::$instance;
+	}
+
+	/**
+	 * Private on purpose: use instance().
+	 */
+	private function __construct() {
+		$this->settings = new Settings();
+		$this->logger   = new Logger( $this->settings );
+		$this->config   = new Config( $this->settings );
+		$this->store    = Factory::make();
+		$this->rules    = new Rules( $this->settings );
+		$this->purge    = new Purge( $this->settings, $this->logger, $this->store );
+	}
+
+	/**
+	 * Wire everything up. Safe to call twice.
+	 */
+	public function boot(): void {
+		if ( $this->booted ) {
+			return;
+		}
+
+		$this->booted = true;
+
+		load_plugin_textdomain( 'bricks-cache', false, dirname( BRICKS_CACHE_BASENAME ) . '/languages' );
+
+		// Compatibility first: it declares exclusions the rest depends on.
+		( new Compat\WooCommerce( $this ) )->boot();
+		( new Compat\Bricks( $this ) )->boot();
+		( new Compat\Bricks_Ecommerce( $this ) )->boot();
+
+		$this->purge->boot();
+
+		$this->register_modules();
+
+		foreach ( $this->modules as $module ) {
+			if ( $module->is_enabled() ) {
+				$module->boot();
+			}
+		}
+
+		if ( is_admin() ) {
+			( new Admin\Admin( $this ) )->boot();
+		}
+
+		( new Admin\Admin_Bar( $this ) )->boot();
+
+		add_action( 'bricks_cache_settings_updated', [ $this, 'on_settings_updated' ], 10, 2 );
+		add_action( 'init', [ $this, 'maybe_upgrade' ], 1 );
+
+		/**
+		 * Fires once every service and module is registered.
+		 *
+		 * @param Plugin $plugin Container.
+		 */
+		do_action( 'bricks_cache_booted', $this );
+	}
+
+	/**
+	 * Build the module list. New optimisations are added here, or from the
+	 * outside through the filter.
+	 */
+	private function register_modules(): void {
+		$modules = [
+			new Modules\Page_Cache( $this ),
+		];
+
+		/**
+		 * Filter the registered modules.
+		 *
+		 * @param Module_Interface[] $modules Module instances.
+		 * @param Plugin             $plugin  Container.
+		 */
+		$modules = (array) apply_filters( 'bricks_cache_modules', $modules, $this );
+
+		foreach ( $modules as $module ) {
+			if ( $module instanceof Module_Interface ) {
+				$this->modules[ $module->id() ] = $module;
+			}
+		}
+	}
+
+	/**
+	 * Bring the filesystem in line with the settings after a save: the config
+	 * file, the drop-in, the WP_CACHE constant and the scheduled cleanup.
+	 *
+	 * @param array<string,mixed> $after  New values.
+	 * @param array<string,mixed> $before Previous values.
+	 */
+	public function on_settings_updated( array $after, array $before ): void {
+		$was_on = ! empty( $before['page_cache']['enabled'] );
+		$is_on  = ! empty( $after['page_cache']['enabled'] );
+
+		Filesystem::prepare();
+		$this->config->write();
+
+		if ( $is_on && ! $was_on ) {
+			$this->enable_page_cache();
+		}
+
+		if ( ! $is_on && $was_on ) {
+			$this->disable_page_cache();
+		}
+
+		$this->sync_schedule();
+
+		// Rules changed, so anything already stored was stored under the old
+		// ones. Cheaper to rebuild than to reason about it.
+		$this->purge->all( 'settings_updated' );
+	}
+
+	/**
+	 * Install the drop-in and switch WP_CACHE on, reporting any failure to the
+	 * admin instead of pretending the cache is running.
+	 */
+	public function enable_page_cache(): void {
+		$installed = Dropin::install();
+
+		if ( is_wp_error( $installed ) ) {
+			$this->notice( $installed->get_error_message(), 'error' );
+			$this->settings->set( 'page_cache.enabled', false );
+			$this->logger->error( 'Drop-in install failed.', [ 'error' => $installed->get_error_code() ] );
+
+			return;
+		}
+
+		$constant = Dropin::set_wp_cache( true );
+
+		if ( is_wp_error( $constant ) ) {
+			$this->notice(
+				$constant->get_error_message() . ' ' . sprintf(
+					/* translators: %s: PHP line to add. */
+					__( 'Añade esta línea al principio de wp-config.php: %s', 'bricks-cache' ),
+					Dropin::manual_line()
+				),
+				'warning'
+			);
+		}
+
+		$this->logger->info( 'Page cache enabled.' );
+	}
+
+	/**
+	 * Remove the drop-in, switch WP_CACHE off and empty the cache.
+	 */
+	public function disable_page_cache(): void {
+		Dropin::uninstall();
+		Dropin::set_wp_cache( false );
+		$this->store->flush();
+
+		$this->logger->info( 'Page cache disabled.' );
+	}
+
+	/**
+	 * Keep the hourly cleanup scheduled only while it is wanted.
+	 */
+	public function sync_schedule(): void {
+		$wanted    = $this->settings->on( 'invalidation.cleanup_expired' ) && $this->settings->on( 'page_cache.enabled' );
+		$scheduled = (bool) wp_next_scheduled( 'bricks_cache_cleanup' );
+
+		if ( $wanted && ! $scheduled ) {
+			wp_schedule_event( time() + HOUR_IN_SECONDS, 'hourly', 'bricks_cache_cleanup' );
+		}
+
+		if ( ! $wanted && $scheduled ) {
+			wp_clear_scheduled_hook( 'bricks_cache_cleanup' );
+		}
+	}
+
+	/**
+	 * Refresh the generated files after a plugin update, since a new version
+	 * can ship a new drop-in or new config keys.
+	 */
+	public function maybe_upgrade(): void {
+		if ( get_option( 'bricks_cache_version' ) === BRICKS_CACHE_VERSION ) {
+			return;
+		}
+
+		Filesystem::prepare();
+		$this->config->write();
+
+		if ( $this->settings->on( 'page_cache.enabled' ) && ! Dropin::is_current() ) {
+			Dropin::install();
+		}
+
+		$this->purge->all( 'plugin_upgraded' );
+		$this->sync_schedule();
+
+		update_option( 'bricks_cache_version', BRICKS_CACHE_VERSION, true );
+
+		$this->logger->info( 'Plugin upgraded.', [ 'version' => BRICKS_CACHE_VERSION ] );
+	}
+
+	/**
+	 * Queue an admin notice for the next screen the user sees.
+	 *
+	 * @param string $message Message in Spanish.
+	 * @param string $type    error|warning|success|info.
+	 */
+	public function notice( string $message, string $type = 'info' ): void {
+		$notices   = get_transient( 'bricks_cache_notices' );
+		$notices   = is_array( $notices ) ? $notices : [];
+		$notices[] = [
+			'message' => $message,
+			'type'    => $type,
+		];
+
+		set_transient( 'bricks_cache_notices', $notices, 5 * MINUTE_IN_SECONDS );
+	}
+
+	/**
+	 * Settings service.
+	 */
+	public function settings(): Settings {
+		return $this->settings;
+	}
+
+	/**
+	 * Logger service.
+	 */
+	public function logger(): Logger {
+		return $this->logger;
+	}
+
+	/**
+	 * Config writer.
+	 */
+	public function config(): Config {
+		return $this->config;
+	}
+
+	/**
+	 * Active backend.
+	 */
+	public function store(): Store_Interface {
+		return $this->store;
+	}
+
+	/**
+	 * Eligibility rules.
+	 */
+	public function rules(): Rules {
+		return $this->rules;
+	}
+
+	/**
+	 * Invalidation.
+	 */
+	public function purge(): Purge {
+		return $this->purge;
+	}
+
+	/**
+	 * Registered modules.
+	 *
+	 * @return array<string,Module_Interface>
+	 */
+	public function modules(): array {
+		return $this->modules;
+	}
+
+	/**
+	 * One module by id.
+	 *
+	 * @param string $id Module identifier.
+	 */
+	public function module( string $id ): ?Module_Interface {
+		return $this->modules[ $id ] ?? null;
+	}
+}
