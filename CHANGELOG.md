@@ -1,5 +1,14 @@
 # Cambios
 
+## 0.1.1
+
+- Las fichas de producto vuelven a cachearse: la cookie
+  `woocommerce_recently_viewed`, que WooCommerce manda en todas ellas, ya no
+  cuenta como motivo para no guardar la página (trampa 3.12).
+- La configuración que lee el archivo servidor se regenera al activar o
+  desactivar un plugin, al cambiar de tema y al mover las páginas de
+  WooCommerce, para que sus exclusiones no se queden viejas.
+
 ## 0.1.0 — Base
 
 Primera versión: las columnas del plugin.

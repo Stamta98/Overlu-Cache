@@ -53,6 +53,7 @@ final class WooCommerce {
 
 		add_filter( 'bricks_cache_excluded_paths', [ $this, 'excluded_paths' ] );
 		add_filter( 'bricks_cache_response_bypass_reason', [ $this, 'response_reason' ], 10, 2 );
+		add_filter( 'bricks_cache_harmless_cookies', [ $this, 'harmless_cookies' ] );
 
 		if ( $this->plugin->settings()->on( 'invalidation.on_stock_change' ) ) {
 			add_action( 'woocommerce_product_set_stock', [ $this, 'on_product_stock' ] );
@@ -97,6 +98,28 @@ final class WooCommerce {
 		$paths[] = '*/wc-ajax/*';
 
 		return $paths;
+	}
+
+	/**
+	 * WooCommerce writes woocommerce_recently_viewed on every single product
+	 * page. Treating that Set-Cookie as a reason not to cache means product
+	 * pages — the pages a shop lives on — are the only ones that never get
+	 * cached, which is the opposite of what anyone wants.
+	 *
+	 * The cookie does not change the product page itself: it only feeds the
+	 * "recently viewed" list. The trade-off is that a page which prints that
+	 * list server-side would show one visitor the products of another. If such
+	 * an element is ever added to a cached template, drop this cookie from the
+	 * list with the bricks_cache_harmless_cookies filter.
+	 *
+	 * @param string[] $cookies Cookie fragments considered harmless.
+	 *
+	 * @return string[]
+	 */
+	public function harmless_cookies( array $cookies ): array {
+		$cookies[] = 'woocommerce_recently_viewed';
+
+		return $cookies;
 	}
 
 	/**

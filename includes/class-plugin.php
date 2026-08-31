@@ -126,6 +126,15 @@ final class Plugin {
 		( new Admin\Admin_Bar( $this ) )->boot();
 
 		add_action( 'bricks_cache_settings_updated', [ $this, 'on_settings_updated' ], 10, 2 );
+
+		// The config file the drop-in reads is built partly from what other
+		// plugins declare. Activating one changes the answer, and the drop-in
+		// would keep applying yesterday's exclusions until the next save.
+		foreach ( [ 'activated_plugin', 'deactivated_plugin', 'switch_theme', 'upgrader_process_complete' ] as $hook ) {
+			add_action( $hook, [ $this, 'rebuild_config' ], 20, 0 );
+		}
+
+		add_action( 'updated_option', [ $this, 'maybe_rebuild_config' ] );
 		add_action( 'init', [ $this, 'maybe_upgrade' ], 1 );
 
 		/**
@@ -244,6 +253,36 @@ final class Plugin {
 
 		if ( ! $wanted && $scheduled ) {
 			wp_clear_scheduled_hook( 'bricks_cache_cleanup' );
+		}
+	}
+
+	/**
+	 * Rewrite the drop-in configuration from the current state of the site.
+	 */
+	public function rebuild_config(): void {
+		Filesystem::prepare();
+		$this->config->write();
+	}
+
+	/**
+	 * Options that move a page the drop-in must never cache, or change how
+	 * URLs are built.
+	 *
+	 * @param string $option Option name.
+	 */
+	public function maybe_rebuild_config( $option ): void {
+		$watched = [
+			'woocommerce_cart_page_id',
+			'woocommerce_checkout_page_id',
+			'woocommerce_myaccount_page_id',
+			'woocommerce_shop_page_id',
+			'permalink_structure',
+			'home',
+			'siteurl',
+		];
+
+		if ( in_array( (string) $option, $watched, true ) ) {
+			$this->rebuild_config();
 		}
 	}
 

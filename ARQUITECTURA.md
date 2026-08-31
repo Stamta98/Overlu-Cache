@@ -164,6 +164,22 @@ y el listado que lo muestra. Las purgas se acumulan en una cola y se ejecutan
 una sola vez al final de la petición, porque guardar un producto dispara una
 docena de ganchos.
 
+### 3.12 WooCommerce escribe una cookie en cada ficha de producto
+
+`woocommerce_recently_viewed` se manda en **todas** las fichas de producto. Como
+la regla 3.4 rechaza cualquier respuesta con `Set-Cookie`, el resultado es que
+las únicas páginas que nunca se cachean son justo las que sostienen la tienda.
+
+> Pasó en la primera verificación en producción: portada y catálogo daban HIT,
+> las fichas de producto daban MISS siempre.
+
+**Regla:** esa cookie está en la lista de inofensivas
+(`bricks_cache_harmless_cookies`), porque no cambia la ficha: solo alimenta la
+lista de «vistos recientemente». El precio de esa decisión es que **una página
+que pinte esa lista en el servidor enseñaría los productos de otro visitante**.
+Si algún día se añade ese elemento a una plantilla cacheada, hay que sacar la
+cookie de la lista con el filtro.
+
 ---
 
 ## 4. Desplegar sin sustos
