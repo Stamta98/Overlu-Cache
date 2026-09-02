@@ -1,5 +1,12 @@
 # Cambios
 
+## 0.3.1
+
+- Si la caché está encendida y falta el archivo `advanced-cache.php`, el plugin
+  lo repone al entrar al escritorio. Reinstalar el plugin con WP-CLI lo
+  desactiva, y al desactivarse retira el archivo: el sitio se quedaba sin caché
+  sin avisar de nada.
+
 ## 0.3.0 — CSS no usado
 
 - Nuevo: eliminación del CSS que la página no usa, **en modo «solo medir» por

@@ -138,6 +138,7 @@ final class Plugin {
 
 		add_action( 'updated_option', [ $this, 'maybe_rebuild_config' ] );
 		add_action( 'init', [ $this, 'maybe_upgrade' ], 1 );
+		add_action( 'admin_init', [ $this, 'heal_dropin' ] );
 
 		/**
 		 * Fires once every service and module is registered.
@@ -265,6 +266,44 @@ final class Plugin {
 		if ( ! $wanted && $scheduled ) {
 			wp_clear_scheduled_hook( 'bricks_cache_cleanup' );
 		}
+	}
+
+	/**
+	 * Put the drop-in back when the settings say the cache is on and the file
+	 * is missing or old.
+	 *
+	 * The drop-in lives outside the plugin, so anything can take it away: a
+	 * deactivation cycle during an update, a migration, a host cleaning
+	 * wp-content. Without this check the admin would keep saying the cache is
+	 * on while nothing at all is being cached, which is the worst of both
+	 * worlds. Only runs in the admin, so it costs a visitor nothing.
+	 */
+	public function heal_dropin(): void {
+		if ( ! $this->settings->on( 'page_cache.enabled' ) || Dropin::is_current() ) {
+			return;
+		}
+
+		if ( Dropin::exists() && ! Dropin::is_ours() ) {
+			return;
+		}
+
+		$this->config->write();
+
+		$installed = Dropin::install();
+
+		if ( is_wp_error( $installed ) ) {
+			$this->logger->error( 'Drop-in could not be restored.', [ 'error' => $installed->get_error_code() ] );
+
+			return;
+		}
+
+		if ( ! Dropin::wp_cache_enabled() ) {
+			Dropin::set_wp_cache( true );
+		}
+
+		$this->logger->warning( 'Drop-in was missing and has been restored.' );
+
+		$this->notice( __( 'Faltaba el archivo advanced-cache.php y se ha vuelto a instalar.', 'bricks-cache' ), 'warning' );
 	}
 
 	/**

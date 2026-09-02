@@ -3,7 +3,7 @@
  * Plugin Name: Bricks Cache
  * Plugin URI:  https://overlu.com/
  * Description: Caché de página y optimización de recursos para tiendas construidas con Bricks + WooCommerce. Pensada para funcionar junto a Bricks Ecommerce y Overlu Marketplace.
- * Version:     0.3.0
+ * Version:     0.3.1
  * Author:      Overlu
  * Text Domain: bricks-cache
  * Domain Path: /languages
@@ -23,7 +23,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'BRICKS_CACHE_VERSION', '0.3.0' );
+define( 'BRICKS_CACHE_VERSION', '0.3.1' );
 define( 'BRICKS_CACHE_FILE', __FILE__ );
 define( 'BRICKS_CACHE_PATH', plugin_dir_path( __FILE__ ) );
 define( 'BRICKS_CACHE_URL', plugin_dir_url( __FILE__ ) );

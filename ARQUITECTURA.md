@@ -346,18 +346,23 @@ un fallo a punto de llegar a un cliente.
 1. Comprobar la sintaxis **antes** de que el archivo llegue a `plugins/`
    (`php -l`, o subirlo con extensión inerte y parsearlo allí).
 2. Instalar con la caché de página **apagada**. Es el estado por defecto.
-3. Chequeo de estado: `/`, `/wp-json/`, `/shop/`, `/cart/`, `/my-account/` y una
+3. **Comprobar que el plugin sigue activo.** Reinstalar con WP-CLI lo desactiva,
+   y al desactivarse retira el archivo `advanced-cache.php` y la constante: el
+   sitio se queda sin caché sin decir nada. Pasó en un despliegue. Desde 0.3.1
+   el propio plugin lo detecta al entrar al escritorio y lo repone, pero el
+   despliegue no debe darlo por hecho.
+4. Chequeo de estado: `/`, `/wp-json/`, `/shop/`, `/cart/`, `/my-account/` y una
    ficha de producto.
-4. Con el módulo de CSS, **contar las hojas de estilo** de la portada, una
+5. Con el módulo de CSS, **contar las hojas de estilo** de la portada, una
    categoría y una ficha: tiene que bajar, no subir. Y con el borrado de CSS no
    usado, empezar en «Solo medir», mirar los números en Estado, y solo entonces
    aplicar y recorrer el sitio abriendo menús, filtros y el carrito.
-5. Encender la caché y repetir el chequeo mirando las cabeceras:
+6. Encender la caché y repetir el chequeo mirando las cabeceras:
    `curl -sI https://overlu.com/ | grep -i x-bricks-cache`.
    La primera visita es `MISS`, la segunda `HIT`. `/cart/` tiene que ser
    `BYPASS` siempre.
-6. Añadir un producto al carrito y recargar la portada: debe dejar de haber
+7. Añadir un producto al carrito y recargar la portada: debe dejar de haber
    `HIT` para esa sesión.
-7. Si algo falla, desactivar el plugin. Al desactivarse se retira el archivo, la
+8. Si algo falla, desactivar el plugin. Al desactivarse se retira el archivo, la
    constante y todas las páginas guardadas, así que el sitio vuelve al estado
    anterior sin tocar nada más.
