@@ -357,6 +357,10 @@ final class Admin {
 				__( 'Limpiar lo caducado', 'bricks-cache' ),
 				__( 'Borra solo las copias que ya han pasado su duración.', 'bricks-cache' ),
 			],
+			'purge_css'        => [
+				__( 'Vaciar el CSS generado', 'bricks-cache' ),
+				__( 'Borra los archivos combinados y reducidos, y vacía la caché de página porque las páginas guardadas los enlazan.', 'bricks-cache' ),
+			],
 			'reinstall_dropin' => [
 				__( 'Reinstalar el archivo advanced-cache.php', 'bricks-cache' ),
 				__( 'Vuelve a copiar el archivo que sirve las páginas y regenera su configuración.', 'bricks-cache' ),
@@ -469,6 +473,12 @@ final class Admin {
 			case 'cleanup_expired':
 				$this->plugin->purge()->cleanup_expired();
 				$this->plugin->notice( __( 'Copias caducadas eliminadas.', 'bricks-cache' ), 'success' );
+				break;
+
+			case 'purge_css':
+				\BricksCache\Filesystem::empty_dir( \BricksCache\Css\Bundle::dir() );
+				$this->plugin->purge()->all( 'css_vaciado' );
+				$this->plugin->notice( __( 'CSS generado y caché de página vaciados.', 'bricks-cache' ), 'success' );
 				break;
 
 			case 'reinstall_dropin':

@@ -15,6 +15,7 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 
 delete_option( 'bricks_cache_settings' );
 delete_option( 'bricks_cache_version' );
+delete_option( 'bricks_cache_css_report' );
 delete_transient( 'bricks_cache_notices' );
 
 wp_clear_scheduled_hook( 'bricks_cache_cleanup' );

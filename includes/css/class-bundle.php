@@ -184,7 +184,11 @@ final class Bundle {
 	}
 
 	/**
-	 * Delete bundles nobody has asked for in a while.
+	 * Delete generated files nobody has asked for in a while: bundles, their
+	 * reduced versions, and the small indexes cached next to them. A file that
+	 * is still in use is simply rebuilt the next time a page needs it, and no
+	 * stored page can be older than its own lifetime, which is measured in
+	 * hours rather than days.
 	 *
 	 * @param int $days How long an unused bundle is kept.
 	 *
@@ -201,7 +205,7 @@ final class Bundle {
 		$removed  = 0;
 
 		foreach ( Filesystem::scan( $dir ) as $file ) {
-			if ( ! is_file( $file ) || ! str_ends_with( $file, '.css' ) ) {
+			if ( ! is_file( $file ) ) {
 				continue;
 			}
 

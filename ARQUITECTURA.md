@@ -26,12 +26,14 @@ includes/
   class-logger.php        Registro con rotación.
   class-diagnostics.php   Comprobaciones del panel de estado.
   store/                  Backend intercambiable. Hoy solo disco.
-  css/                    Minificador, recolector de la cola, empaquetado y CSS crítico.
+  css/                    Minificador, recolector de la cola, empaquetado, CSS crítico
+                          y eliminación del CSS no usado (analizador y vocabulario).
   modules/                Una optimización = un módulo. Hoy: caché de página y CSS.
   compat/                 WooCommerce, Bricks, Bricks Ecommerce.
   admin/                  Panel y barra superior.
 tests/test-pure-rules.php Pruebas de Key y Bypass, sin WordPress.
 tests/test-css.php        Pruebas del minificador, sin WordPress.
+tests/test-purge.php      Pruebas del borrado de CSS no usado, sin WordPress.
 ```
 
 **Las dos mitades.** El *dropin* lee: corre antes que WordPress y sirve la
@@ -308,6 +310,35 @@ así que se descargan una vez para todo el sitio, y partir por tramos en vez de
 por tipo mantiene intacto el orden de la cascada: la regla que ganaba, sigue
 ganando.
 
+### 3.22 Lo que la página aún no enseña también existe
+
+Quitar el CSS que no aparece en el HTML es lo más rentable del plugin y lo
+único que puede romper el sitio *más tarde*: la clase del menú abierto, la del
+filtro aplicado, la del aviso de WooCommerce que llega por AJAX. Nada de eso
+está en la página cuando se mide, y quitarlo deja un sitio que se ve bien hasta
+que alguien lo toca.
+
+**Regla:** tres defensas, y ninguna basta sola.
+
+1. Solo las **clases e ids** deciden. Un selector de etiqueta, de atributo o de
+   pseudoelemento se conserva siempre: pesan poco y equivocarse con ellos
+   rompe maquetación sin ganar nada. El peso está en las clases: tres fuentes
+   de iconos son 121 KB de `.fa-*`, `.ion-*` y `.ti-*`.
+2. Se **lee el JavaScript** de la página buscando dónde se manipulan clases
+   (`classList`, `addClass`, un selector dentro de una cadena, HTML escrito
+   desde JS). No es una prueba, es un indicio.
+3. Una **lista de conservación** para lo que el indicio no alcanza, con los
+   estados y los avisos de WooCommerce dentro por defecto.
+
+Y una cuarta, que es la que importa: el modo por defecto es **medir sin
+aplicar**. Primero se mira cuánto se quitaría y si lo conservado tiene sentido.
+
+`:not()`, `:is()`, `:where()` y `:has()` no exigen que sus clases existan: en
+un purgador ingenuo son la causa clásica de borrar reglas en uso.
+
+Si el resultado quedase vacío, no se sirve: un CSS vacío no es una mejora, es
+un fallo a punto de llegar a un cliente.
+
 ---
 
 ## 4. Desplegar sin sustos
@@ -318,7 +349,9 @@ ganando.
 3. Chequeo de estado: `/`, `/wp-json/`, `/shop/`, `/cart/`, `/my-account/` y una
    ficha de producto.
 4. Con el módulo de CSS, **contar las hojas de estilo** de la portada, una
-   categoría y una ficha: tiene que bajar de 23 a 1, no subir a 24.
+   categoría y una ficha: tiene que bajar, no subir. Y con el borrado de CSS no
+   usado, empezar en «Solo medir», mirar los números en Estado, y solo entonces
+   aplicar y recorrer el sitio abriendo menús, filtros y el carrito.
 5. Encender la caché y repetir el chequeo mirando las cabeceras:
    `curl -sI https://overlu.com/ | grep -i x-bricks-cache`.
    La primera visita es `MISS`, la segunda `HIT`. `/cart/` tiene que ser

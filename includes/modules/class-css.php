@@ -10,6 +10,10 @@ namespace BricksCache\Modules;
 use BricksCache\Css\Bundle;
 use BricksCache\Css\Collector;
 use BricksCache\Css\Critical;
+use BricksCache\Css\Purger;
+use BricksCache\Css\Selectors;
+use BricksCache\Css\Vocabulary;
+use BricksCache\Filesystem;
 use BricksCache\Diagnostics;
 use BricksCache\Module;
 
@@ -49,6 +53,13 @@ final class Css extends Module {
 	 * @var string[]
 	 */
 	private array $bundled_handles = [];
+
+	/**
+	 * Bundles printed on this page, as url => path.
+	 *
+	 * @var array<string,string>
+	 */
+	private array $printed_bundles = [];
 
 	/**
 	 * Files already inside a bundle. The same file is queued under two handles
@@ -124,6 +135,33 @@ final class Css extends Module {
 				'description' => __( 'Solo se aplica en las páginas para las que hayas escrito CSS crítico más abajo. Sin él la página aparecería un instante sin estilos.', 'bricks-cache' ),
 				'default'     => false,
 			],
+			'remove_unused'    => [
+				'type'        => 'toggle',
+				'label'       => __( 'Quitar el CSS que la página no usa', 'bricks-cache' ),
+				'description' => __( 'Lo más rentable y lo más delicado. Empieza en «Solo medir» y mira los números en Estado antes de aplicarlo.', 'bricks-cache' ),
+				'default'     => false,
+			],
+			'unused_mode'      => [
+				'type'        => 'select',
+				'label'       => __( 'Modo', 'bricks-cache' ),
+				'default'     => 'report',
+				'options'     => [
+					'report' => __( 'Solo medir, sin tocar la página', 'bricks-cache' ),
+					'apply'  => __( 'Aplicar: servir el CSS reducido', 'bricks-cache' ),
+				],
+			],
+			'scan_scripts'     => [
+				'type'        => 'toggle',
+				'label'       => __( 'Leer también el JavaScript', 'bricks-cache' ),
+				'description' => __( 'Busca en los scripts las clases que se añaden al abrir un menú, aplicar un filtro o llegar un aviso por AJAX, para no quitarlas.', 'bricks-cache' ),
+				'default'     => true,
+			],
+			'safelist'         => [
+				'type'        => 'list',
+				'label'       => __( 'Clases que no se quitan nunca', 'bricks-cache' ),
+				'description' => __( 'Una por línea. Admite * al final. Si algo se rompe solo al interactuar con la página, la clase que falta va aquí.', 'bricks-cache' ),
+				'default'     => self::default_safelist(),
+			],
 			'keep_days'        => [
 				'type'        => 'number',
 				'label'       => __( 'Días que se guardan los archivos antiguos', 'bricks-cache' ),
@@ -168,9 +206,79 @@ final class Css extends Module {
 	}
 
 	/**
+	 * Classes no page shows until something happens: a menu opens, a filter
+	 * runs, WooCommerce drops a notice in over AJAX. They are not in the HTML
+	 * when the page is measured, and removing them means a site that looks
+	 * right until someone touches it.
+	 *
+	 * @return string[]
+	 */
+	public static function default_safelist(): array {
+		return [
+			// States added by scripts.
+			'is-*',
+			'has-*',
+			'active',
+			'open',
+			'opened',
+			'show',
+			'shown',
+			'hidden',
+			'visible',
+			'loading',
+			'processing',
+			'added',
+			'disabled',
+			'selected',
+			'error',
+			'success',
+			'current-menu-item',
+			'current_page_item',
+			'sub-menu',
+			'children',
+			'sr-only',
+			'screen-reader-text',
+			'skip-link',
+			// WooCommerce over AJAX: notices, fragments, mini cart.
+			'woocommerce-message',
+			'woocommerce-error',
+			'woocommerce-info',
+			'woocommerce-notices-wrapper',
+			'woocommerce-mini-cart*',
+			'widget_shopping_cart*',
+			'added_to_cart',
+			'cart-empty',
+			'quantity',
+			'qty',
+			'star-rating',
+			'stars',
+			'shipping-calculator*',
+			'wc-*',
+			// This shop's own elements.
+			'brx-*',
+			'bricksecom*',
+			'overlu-*',
+			'jet-*',
+			// Libraries that build their markup in the browser.
+			'splide*',
+			'swiper*',
+			'select2*',
+			'chosen-*',
+			'flatpickr*',
+			'leaflet*',
+			'mfp-*',
+			'glightbox*',
+			'fancybox*',
+			'tippy*',
+			'tooltip*',
+		];
+	}
+
+	/**
 	 * Hook into the style queue.
 	 */
 	public function boot(): void {
+		add_action( 'template_redirect', [ $this, 'maybe_start_buffer' ], 1 );
 		add_action( 'wp_print_styles', [ $this, 'optimize' ], 1 );
 		add_action( 'wp_head', [ $this, 'print_critical' ], 1 );
 		add_filter( 'style_loader_tag', [ $this, 'suppress_bundled_tag' ], 9, 2 );
@@ -278,6 +386,8 @@ final class Css extends Module {
 
 				wp_enqueue_style( $handle, $built['url'], [], null, $media ); // phpcs:ignore WordPress.WP.EnqueuedResourceParameters
 
+				$this->printed_bundles[ (string) $built['url'] ] = (string) $built['path'];
+
 				$inline = $this->inline_of( $run['items'] );
 
 				if ( '' !== $inline ) {
@@ -309,6 +419,8 @@ final class Css extends Module {
 			$styles->dequeue( (string) $item['handle'] );
 
 			wp_enqueue_style( $handle, $built['url'], [], null, $media ); // phpcs:ignore WordPress.WP.EnqueuedResourceParameters
+
+			$this->printed_bundles[ (string) $built['url'] ] = (string) $built['path'];
 
 			if ( '' !== (string) $item['inline'] ) {
 				wp_add_inline_style( $handle, (string) $item['inline'] );
@@ -520,7 +632,318 @@ final class Css extends Module {
 			),
 		];
 
+		$report = get_option( 'bricks_cache_css_report', [] );
+
+		if ( $this->setting( 'remove_unused', false ) && is_array( $report ) && [] !== $report ) {
+			foreach ( $report as $context => $data ) {
+				$antes   = (int) ( $data['antes'] ?? 0 );
+				$despues = (int) ( $data['despues'] ?? 0 );
+
+				if ( $antes < 1 ) {
+					continue;
+				}
+
+				$checks[] = [
+					'label'   => sprintf(
+						/* translators: %s: kind of page. */
+						__( 'CSS sin usar · %s', 'bricks-cache' ),
+						Critical::label( (string) $context )
+					),
+					'status'  => empty( $data['aplicado'] ) ? Diagnostics::WARN : Diagnostics::OK,
+					'message' => sprintf(
+						/* translators: 1: size before, 2: size after, 3: percentage, 4: rules removed, 5: rules kept, 6: applied or measured. */
+						__( 'De %1$s a %2$s (−%3$s%%). Se quitan %4$s reglas y se conservan %5$s. %6$s', 'bricks-cache' ),
+						size_format( $antes, 1 ),
+						size_format( $despues, 1 ),
+						number_format_i18n( round( 100 - ( $despues / max( 1, $antes ) * 100 ) ), 1 ),
+						number_format_i18n( (int) ( $data['quitadas'] ?? 0 ) ),
+						number_format_i18n( (int) ( $data['conservadas'] ?? 0 ) ),
+						empty( $data['aplicado'] )
+							? __( 'Solo medido: la página sigue sirviendo el CSS completo.', 'bricks-cache' )
+							: __( 'Aplicado.', 'bricks-cache' )
+					),
+				];
+			}
+		}
+
 		return $checks;
+	}
+
+	/**
+	 * Open a buffer when the unused-CSS pass is on. It is opened after the
+	 * page cache's, so this one closes first: the page that gets stored is the
+	 * one with the reduced stylesheets already in it.
+	 */
+	public function maybe_start_buffer(): void {
+		if ( ! $this->should_run() || ! $this->setting( 'remove_unused', false ) ) {
+			return;
+		}
+
+		ob_start( [ $this, 'filter_html' ] );
+	}
+
+	/**
+	 * With the finished page in hand, work out which rules it could never use.
+	 *
+	 * In "report" mode nothing is swapped: the numbers are recorded and the
+	 * page goes out exactly as it was. That is the default, because the first
+	 * question is not "how much can we remove" but "how much is there to
+	 * remove, and does the list of what it kept look sane".
+	 *
+	 * @param string $html Rendered page.
+	 */
+	public function filter_html( string $html ): string {
+		if ( [] === $this->printed_bundles ) {
+			return $html;
+		}
+
+		$safelist   = array_map( 'strval', (array) $this->setting( 'safelist', [] ) );
+		$vocabulary = Vocabulary::from_html( $html );
+
+		if ( $this->setting( 'scan_scripts', true ) ) {
+			$vocabulary += $this->script_vocabulary();
+		}
+
+		$apply  = 'apply' === (string) $this->setting( 'unused_mode', 'report' );
+		$report = [
+			'contexto'    => Critical::context(),
+			'antes'       => 0,
+			'despues'     => 0,
+			'quitadas'    => 0,
+			'conservadas' => 0,
+			'fecha'       => time(),
+			'aplicado'    => $apply,
+		];
+
+		$generated = false;
+
+		foreach ( $this->printed_bundles as $url => $path ) {
+			$result = $this->purge_bundle( (string) $path, $vocabulary, $safelist, $generated );
+
+			if ( null === $result ) {
+				continue;
+			}
+
+			$report['antes']       += $result['antes'];
+			$report['despues']     += $result['despues'];
+			$report['quitadas']    += $result['quitadas'];
+			$report['conservadas'] += $result['conservadas'];
+
+			if ( $apply ) {
+				$html = str_replace( (string) $url, $result['url'], $html );
+			}
+		}
+
+		if ( $generated || ! $this->report_exists( (string) $report['contexto'] ) ) {
+			$this->record_report( $report );
+		}
+
+		return $html;
+	}
+
+	/**
+	 * Build, or reuse, the reduced version of one bundle for this page.
+	 *
+	 * The result only depends on which of the classes the stylesheet asks for
+	 * are present, so that intersection is the cache key: every product page
+	 * asks for the same set and they all share one file.
+	 *
+	 * @param string             $path       Bundle path.
+	 * @param array<string,bool> $vocabulary Tokens present in the page.
+	 * @param string[]           $safelist   Patterns always kept.
+	 * @param bool               $generated  Set to true when a new file was written.
+	 *
+	 * @return array{url:string,antes:int,despues:int,quitadas:int,conservadas:int}|null
+	 */
+	private function purge_bundle( string $path, array $vocabulary, array $safelist, bool &$generated ): ?array {
+		if ( ! is_readable( $path ) ) {
+			return null;
+		}
+
+		$relevant = [];
+
+		foreach ( $this->index_for( $path ) as $token ) {
+			if ( isset( $vocabulary[ $token ] ) || Selectors::in_safelist( $token, $safelist ) ) {
+				$relevant[] = $token;
+			}
+		}
+
+		$signature = substr( md5( implode( ',', $relevant ) . '|' . implode( ',', $safelist ) ), 0, 12 );
+		$target    = substr( $path, 0, -4 ) . '-' . $signature . '.css';
+		$meta_file = $target . '.json';
+
+		if ( ! is_readable( $target ) || ! is_readable( $meta_file ) ) {
+			$css    = (string) @file_get_contents( $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors,WordPress.WP.AlternativeFunctions
+			$result = Purger::purge( $css, $vocabulary, $safelist );
+
+			// An empty stylesheet is never an improvement, it is a bug about to
+			// be served to a customer.
+			if ( '' === trim( $result['css'] ) || $result['kept'] < 1 ) {
+				$this->logger()->warning( 'Purged stylesheet came out empty.', [ 'file' => basename( $path ) ] );
+
+				return null;
+			}
+
+			if ( ! Filesystem::write( $target, $result['css'] ) ) {
+				return null;
+			}
+
+			Filesystem::write(
+				$meta_file,
+				(string) wp_json_encode(
+					[
+						'quitadas'    => $result['removed'],
+						'conservadas' => $result['kept'],
+					]
+				)
+			);
+
+			$generated = true;
+
+			$this->logger()->info(
+				'Unused CSS removed.',
+				[
+					'file'    => basename( $path ),
+					'before'  => filesize( $path ),
+					'after'   => filesize( $target ),
+					'removed' => $result['removed'],
+				]
+			);
+		}
+
+		$meta = json_decode( (string) @file_get_contents( $meta_file ), true ); // phpcs:ignore WordPress.PHP.NoSilencedErrors,WordPress.WP.AlternativeFunctions
+		$meta = is_array( $meta ) ? $meta : [];
+
+		$url = Bundle::to_url( $target );
+
+		if ( null === $url ) {
+			return null;
+		}
+
+		return [
+			'url'         => $url,
+			'antes'       => (int) filesize( $path ),
+			'despues'     => (int) filesize( $target ),
+			'quitadas'    => (int) ( $meta['quitadas'] ?? 0 ),
+			'conservadas' => (int) ( $meta['conservadas'] ?? 0 ),
+		];
+	}
+
+	/**
+	 * Every class and id a bundle asks for, cached next to it: parsing half a
+	 * megabyte of CSS to answer the same question on every page would undo the
+	 * point of the exercise.
+	 *
+	 * @param string $path Bundle path.
+	 *
+	 * @return string[]
+	 */
+	private function index_for( string $path ): array {
+		$file = $path . '.index.json';
+
+		if ( is_readable( $file ) ) {
+			$index = json_decode( (string) @file_get_contents( $file ), true ); // phpcs:ignore WordPress.PHP.NoSilencedErrors,WordPress.WP.AlternativeFunctions
+
+			if ( is_array( $index ) ) {
+				return array_map( 'strval', $index );
+			}
+		}
+
+		$index = Purger::index( (string) @file_get_contents( $path ) ); // phpcs:ignore WordPress.PHP.NoSilencedErrors,WordPress.WP.AlternativeFunctions
+
+		Filesystem::write( $file, (string) wp_json_encode( $index ) );
+
+		return $index;
+	}
+
+	/**
+	 * Classes the scripts of this page may add to it later.
+	 *
+	 * @return array<string,bool>
+	 */
+	private function script_vocabulary(): array {
+		$scripts = wp_scripts();
+
+		if ( ! $scripts instanceof \WP_Scripts ) {
+			return [];
+		}
+
+		$registry        = clone $scripts;
+		$registry->to_do = [];
+		$registry->all_deps( $registry->queue );
+
+		$files = [];
+
+		foreach ( $registry->to_do as $handle ) {
+			$item = $registry->registered[ $handle ] ?? null;
+
+			if ( ! $item || ! $item->src ) {
+				continue;
+			}
+
+			$src = (string) $item->src;
+
+			if ( ! preg_match( '|^(https?:)?//|', $src ) ) {
+				$src = $registry->base_url . $src;
+			}
+
+			$path = Bundle::to_path( $src );
+
+			if ( null !== $path && filesize( $path ) < 2097152 ) {
+				$files[ $path ] = (int) filemtime( $path );
+			}
+		}
+
+		if ( [] === $files ) {
+			return [];
+		}
+
+		ksort( $files );
+
+		$cache = Bundle::dir() . '/scripts-' . substr( md5( (string) wp_json_encode( $files ) ), 0, 16 ) . '.json';
+
+		if ( is_readable( $cache ) ) {
+			$tokens = json_decode( (string) @file_get_contents( $cache ), true ); // phpcs:ignore WordPress.PHP.NoSilencedErrors,WordPress.WP.AlternativeFunctions
+
+			if ( is_array( $tokens ) ) {
+				return array_fill_keys( array_map( 'strval', $tokens ), true );
+			}
+		}
+
+		$tokens = [];
+
+		foreach ( array_keys( $files ) as $path ) {
+			$tokens += Vocabulary::from_script( (string) @file_get_contents( $path ) ); // phpcs:ignore WordPress.PHP.NoSilencedErrors,WordPress.WP.AlternativeFunctions
+		}
+
+		Filesystem::write( $cache, (string) wp_json_encode( array_keys( $tokens ) ) );
+
+		return $tokens;
+	}
+
+	/**
+	 * Whether the status screen already has numbers for this kind of page.
+	 *
+	 * @param string $context Kind of page.
+	 */
+	private function report_exists( string $context ): bool {
+		$report = get_option( 'bricks_cache_css_report', [] );
+
+		return is_array( $report ) && isset( $report[ $context ] );
+	}
+
+	/**
+	 * Store what was measured, for the status screen.
+	 *
+	 * @param array<string,mixed> $data Numbers for one kind of page.
+	 */
+	private function record_report( array $data ): void {
+		$report = get_option( 'bricks_cache_css_report', [] );
+		$report = is_array( $report ) ? $report : [];
+
+		$report[ (string) $data['contexto'] ] = $data;
+
+		update_option( 'bricks_cache_css_report', $report, false );
 	}
 
 	/**

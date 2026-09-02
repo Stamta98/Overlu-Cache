@@ -40,6 +40,13 @@ la huella de su contenido, así que se cachea para siempre en el navegador y se
 renueva solo. Opcionalmente se carga sin bloquear el dibujado, pero solo en las
 páginas para las que hayas escrito CSS crítico.
 
+**Eliminación del CSS no usado.** Con la página ya renderizada, se descartan
+las reglas cuyas clases e ids no existen en ella. Solo deciden las clases y los
+ids —las reglas de etiqueta, atributo o pseudoelemento se conservan siempre—,
+se lee el JavaScript en busca de clases que se añaden al interactuar, y hay una
+lista de conservación editable con los estados y avisos de WooCommerce dentro.
+Viene en **modo «solo medir»**: dice cuánto quitaría sin tocar la página.
+
 **Panel en español** con estado, comprobaciones de salud, ajustes, registro y
 herramientas manuales; y accesos directos en la barra superior para vaciar todo
 o solo la página que se está viendo.
@@ -48,10 +55,8 @@ o solo la página que se está viendo.
 
 Está previsto, en este orden:
 
-1. Eliminar el CSS que una página no usa. Aquí está la ganancia grande que
-   queda: 121 KB de esta tienda son tres fuentes de iconos completas
-   (Font Awesome, Ionicons, Themify) para usar un puñado de iconos.
-2. Generar el CSS crítico solo, en vez de pegarlo a mano.
+1. Generar el CSS crítico solo, en vez de pegarlo a mano.
+2. Empaquetar también las hojas que Bricks encola al final del cuerpo.
 3. Scripts: diferir, retrasar hasta la primera interacción, excluir lo crítico.
 4. Imágenes: `loading`, `fetchpriority`, dimensiones, WebP/AVIF.
 5. Precarga: recorrer el sitemap y calentar la caché tras una purga.
@@ -99,6 +104,7 @@ WordPress, así que se pueden probar sin levantar nada:
 ```
 php tests/test-pure-rules.php
 php tests/test-css.php
+php tests/test-purge.php
 ```
 
 ## Estructura
@@ -119,7 +125,8 @@ includes/
   class-logger.php        Registro con rotación.
   class-diagnostics.php   Comprobaciones del panel de estado.
   store/                  Almacenamiento intercambiable (hoy: disco).
-  css/                    Minificador, recolector de la cola, empaquetado, CSS crítico.
+  css/                    Minificador, recolector, empaquetado, CSS crítico y
+                          borrado del CSS no usado.
   modules/                Una optimización por módulo (caché de página y CSS).
   compat/                 WooCommerce, Bricks, Bricks Ecommerce.
   admin/                  Panel y barra superior.

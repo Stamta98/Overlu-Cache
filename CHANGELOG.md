@@ -1,5 +1,25 @@
 # Cambios
 
+## 0.3.0 — CSS no usado
+
+- Nuevo: eliminación del CSS que la página no usa, **en modo «solo medir» por
+  defecto**. Mide cuánto se quitaría y lo enseña en Estado sin tocar la página;
+  aplicarlo es un cambio de ajuste aparte.
+- Solo las clases y los ids deciden si una regla sobra. Etiquetas, atributos,
+  pseudoelementos, `:root`, `@font-face` y `@keyframes` se conservan siempre.
+- `:not()`, `:is()`, `:where()` y `:has()` no exigen que sus clases existan, que
+  es el error clásico de los purgadores ingenuos.
+- Se lee el JavaScript de la página buscando clases que se añaden al interactuar
+  (`classList`, `addClass`, selectores dentro de cadenas, HTML generado desde
+  JS), y hay una lista de conservación editable que ya trae los estados y los
+  avisos de WooCommerce.
+- Si el resultado saliera vacío, no se sirve: se registra el aviso y la página
+  sigue con su CSS completo.
+- El resultado se cachea por la intersección entre lo que pide la hoja y lo que
+  tiene la página, así que todas las fichas de producto comparten un archivo.
+- 33 pruebas nuevas sin WordPress en `tests/test-purge.php` (trampa 3.22).
+- Nueva herramienta: «Vaciar el CSS generado».
+
 ## 0.2.3
 
 - El CSS se reparte en tramos: lo que comparten todas las páginas por un lado y
