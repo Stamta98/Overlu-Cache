@@ -1,5 +1,12 @@
 # Cambios
 
+## 0.3.2
+
+- `bu-*` entra en la lista de conservación por defecto: BricksUltimate genera
+  HTML en PHP y lo devuelve por AJAX (contador del carrito, tabla comparativa),
+  así que esas clases no están ni en la página ni en el JavaScript cuando se
+  mide. Comprobado leyendo el plugin, no supuesto.
+
 ## 0.3.1
 
 - Si la caché está encendida y falta el archivo `advanced-cache.php`, el plugin

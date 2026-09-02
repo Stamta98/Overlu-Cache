@@ -254,7 +254,11 @@ final class Css extends Module {
 			'stars',
 			'shipping-calculator*',
 			'wc-*',
-			// This shop's own elements.
+			// This shop's own elements. BricksUltimate builds markup in PHP and
+			// returns it over AJAX — the cart counter, the compare table — so
+			// those classes are in neither the page nor the scripts when the
+			// page is measured. Verified by reading the plugin, not guessed.
+			'bu-*',
 			'brx-*',
 			'bricksecom*',
 			'overlu-*',
